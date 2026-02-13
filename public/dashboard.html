@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Building Network Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body { font-family: system-ui; margin: 2rem; max-width: 1000px; }
+    .card { padding: 1rem; border: 1px solid #ddd; border-radius: 8px; margin-bottom: 2rem; }
+    label { display: block; margin-bottom: 0.5rem; }
+    input { padding: 0.4rem; width: 100%; margin-bottom: 1rem; }
+    canvas { max-width: 100%; }
+  </style>
+</head>
+<body>
+
+<h1>Building Network Dashboard</h1>
+<p>This dashboard visualizes network drops and latency for all participating units.</p>
+
+<div class="card">
+  <h2>Filter by Name or Unit</h2>
+  <label>Enter name or unit (e.g., “3B” or “Shava”)</label>
+  <input id="filterInput" placeholder="Type to filter…">
+  <button onclick="loadData()">Apply Filter</button>
+</div>
+
+<div class="card">
+  <h2>Outage Timeline</h2>
+  <canvas id="timelineChart"></canvas>
+</div>
+
+<div class="card">
+  <h2>Latency Over Time</h2>
+  <canvas id="latencyChart"></canvas>
+</div>
+
+<div class="card">
+  <h2>Offline Events per Unit</h2>
+  <canvas id="comparisonChart"></canvas>
+</div>
+
+<script>
+const BASE = ""; // same origin as backend since dashboard is served by Render
+
+let timelineChart, latencyChart, comparisonChart;
+
+async function loadData() {
+  const filter = document.getElementById('filterInput').value.toLowerCase();
+
+  const res = await fetch(`${BASE}/logs`);
+  const logs = await res.json();
+
+  const filtered = logs.filter(l =>
+    (l.name && l.name.toLowerCase().includes(filter)) ||
+    (l.unit && l.unit.toLowerCase().includes(filter))
+  );
+
+  drawTimeline(filtered);
+  drawLatency(filtered);
+  drawComparison(logs);
+}
+
+function destroyChart(chart) {
+  if (chart) chart.destroy();
+}
+
+function drawTimeline(entries) {
+  const events = entries.filter(e =>
+    e.eventType === 'offline-event' || e.eventType === 'online-event'
+  );
+
+  const labels = events.map(e => e.timestamp);
+  const values = events.map(e => e.eventType === 'offline-event' ? 0 : 1);
+
+  destroyChart(timelineChart);
+
+  timelineChart = new Chart(document.getElementById('timelineChart'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Connection Status (1 = Online, 0 = Offline)',
+        data: values,
+        borderColor: '#2563eb',
+        tension: 0.2
+      }]
+    }
+  });
+}
+
+function drawLatency(entries) {
+  const pings = entries.filter(e => e.eventType === 'ping');
+
+  const labels = pings.map(e => e.timestamp);
+  const values = pings.map(e => e.latencyMs);
+
+  destroyChart(latencyChart);
+
+  latencyChart = new Chart(document.getElementById('latencyChart'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Latency (ms)',
+        data: values,
+        borderColor: '#b00020',
+        tension: 0.2
+      }]
+    }
+  });
+}
+
+function drawComparison(allLogs) {
+  const byUnit = {};
+
+  allLogs.forEach(e => {
+    if (!e.unit) return;
+    if (!byUnit[e.unit]) byUnit[e.unit] = 0;
+    if (e.eventType === 'offline-event') byUnit[e.unit]++;
+  });
+
+  const labels = Object.keys(byUnit);
+  const values = Object.values(byUnit);
+
+  destroyChart(comparisonChart);
+
+  comparisonChart = new Chart(document.getElementById('comparisonChart'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Offline Events per Unit',
+        data: values,
+        backgroundColor: '#10b981'
+      }]
+    }
+  });
+}
+
+// Load everything on page load
+loadData();
+</script>
+
+</body>
+</html>
+
