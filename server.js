@@ -13,6 +13,7 @@ const LOG_FILE = path.join(__dirname, 'logs.jsonl');
 
 app.use(express.json());
 app.use(morgan('combined'));
+app.use(express.static(path.join(__dirname, 'public')));
 
 // Simple ping endpoint
 app.get('/ping', (req, res) => {
