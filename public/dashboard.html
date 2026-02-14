@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
   <style>
-    body { font-family: system-ui; margin: 2rem; max-width: 1100px; }
+    body { font-family: system-ui; margin: 2rem; max-width: 1200px; }
     .card { padding: 1rem; border: 1px solid #ddd; border-radius: 8px; margin-bottom: 2rem; }
     table { width: 100%; border-collapse: collapse; }
     th, td { padding: 6px; border: 1px solid #ccc; }
@@ -30,10 +30,13 @@
         <th onclick="sortSummary('name')">Name ▲▼</th>
         <th onclick="sortSummary('first')">First Seen ▲▼</th>
         <th onclick="sortSummary('last')">Last Seen ▲▼</th>
+        <th onclick="sortSummary('since')">Time Since Last Seen ▲▼</th>
+        <th onclick="sortSummary('min')">Min Latency ▲▼</th>
         <th onclick="sortSummary('avg')">Avg Latency ▲▼</th>
         <th onclick="sortSummary('max')">Max Latency ▲▼</th>
         <th onclick="sortSummary('success')">Ping Successes ▲▼</th>
         <th onclick="sortSummary('fail')">Ping Failures ▲▼</th>
+        <th onclick="sortSummary('uptime')">Uptime % ▲▼</th>
         <th onclick="sortSummary('offline')">Offline Events ▲▼</th>
       </tr>
     </thead>
@@ -61,6 +64,26 @@ function sortSummary(column) {
     summarySort.direction = 1;
   }
   loadData();
+}
+
+// ⭐ Human‑friendly "time since last seen"
+function formatSince(ts) {
+  if (!ts) return "—";
+
+  const diffMs = Date.now() - new Date(ts).getTime();
+  if (diffMs < 0) return "—";
+
+  const sec = Math.floor(diffMs / 1000);
+  if (sec < 60) return `${sec}s`;
+
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m ${sec % 60}s`;
+
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ${min % 60}m`;
+
+  const days = Math.floor(hr / 24);
+  return `${days}d ${hr % 24}h`;
 }
 
 function drawSummaryTable(entries) {
@@ -127,15 +150,29 @@ function drawSummaryTable(entries) {
         ? Math.max(...u.latencies)
         : null;
 
+    const min =
+      u.latencies.length > 0
+        ? Math.min(...u.latencies)
+        : null;
+
+    const totalPings = u.success + u.fail;
+    const uptime =
+      totalPings > 0
+        ? ((u.success / totalPings) * 100).toFixed(1)
+        : null;
+
     return {
       unit: u.unit,
       name: u.name,
       first: u.first,
       last: u.last,
+      since: u.last ? Date.now() - new Date(u.last).getTime() : null,
+      min,
       avg,
       max,
       success: u.success,
       fail: u.fail,
+      uptime,
       offline: u.offline
     };
   });
@@ -162,10 +199,13 @@ function drawSummaryTable(entries) {
       <td>${r.name}</td>
       <td>${r.first ?? "—"}</td>
       <td>${r.last ?? "—"}</td>
+      <td>${r.since !== null ? formatSince(r.last) : "—"}</td>
+      <td>${r.min ?? "—"}</td>
       <td>${r.avg ?? "—"}</td>
       <td>${r.max ?? "—"}</td>
       <td>${r.success}</td>
       <td>${r.fail}</td>
+      <td>${r.uptime !== null ? r.uptime + "%" : "—"}</td>
       <td>${r.offline}</td>
     `;
     tableBody.appendChild(row);
