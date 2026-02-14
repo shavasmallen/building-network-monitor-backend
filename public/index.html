@@ -19,6 +19,31 @@
     .log-success { color: #15803d; }   /* green */
     .log-failure { color: #b91c1c; }   /* red */
     .log-info { color: #1e3a8a; }      /* blue */
+
+    .form-card {
+      border: 1px solid #ccc;
+      padding: 1rem;
+      border-radius: 8px;
+      margin-bottom: 1.5rem;
+      background: #fdfdfd;
+      max-width: 400px;
+    }
+    label { display: block; margin-bottom: 0.3rem; }
+    input {
+      width: 100%;
+      padding: 0.4rem;
+      margin-bottom: 1rem;
+      border: 1px solid #bbb;
+      border-radius: 4px;
+    }
+    button {
+      padding: 0.5rem 1rem;
+      cursor: pointer;
+      background: #2563eb;
+      color: white;
+      border: none;
+      border-radius: 4px;
+    }
   </style>
 </head>
 <body>
@@ -26,20 +51,28 @@
 <h1>Network Monitor</h1>
 <p>Live connectivity and latency logging.</p>
 
+<!-- ⭐ FORM FOR NAME + UNIT -->
+<div class="form-card">
+  <h3>Your Info</h3>
+  <label for="nameInput">Name</label>
+  <input id="nameInput" placeholder="e.g., Shava">
+
+  <label for="unitInput">Unit</label>
+  <input id="unitInput" placeholder="e.g., 4345 #2">
+
+  <button onclick="startMonitoring()">Start Monitoring</button>
+</div>
+
 <div>
   <strong>Status Log:</strong>
   <div id="liveLog"></div>
 </div>
 
 <script>
-// Identify this device
-const name = localStorage.getItem("monitorName") || prompt("Enter your name:");
-localStorage.setItem("monitorName", name);
-
-const unit = localStorage.getItem("monitorUnit") || prompt("Enter your unit (e.g., 3B):");
-localStorage.setItem("monitorUnit", unit);
-
-const sessionId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+let name = null;
+let unit = null;
+let sessionId = null;
+let monitoringStarted = false;
 
 // Append messages to the live log with color coding
 function appendToLog(message, type = "info") {
@@ -69,8 +102,38 @@ async function logEvent(event) {
   }
 }
 
+// ⭐ Start monitoring after form submission
+function startMonitoring() {
+  name = document.getElementById("nameInput").value.trim();
+  unit = document.getElementById("unitInput").value.trim();
+
+  if (!name || !unit) {
+    appendToLog("✖ Please enter both name and unit before starting.", "failure");
+    return;
+  }
+
+  sessionId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  monitoringStarted = true;
+
+  appendToLog(`✔ Monitoring started for ${name} (${unit})`, "success");
+
+  logEvent({
+    eventType: "session-start",
+    timestamp: new Date().toISOString(),
+    name,
+    unit,
+    sessionId
+  });
+
+  // Begin ping loop
+  sendPing();
+  setInterval(sendPing, 3000);
+}
+
 // Ping logic with immediate failure logging
 async function sendPing() {
+  if (!monitoringStarted) return;
+
   const start = performance.now();
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 3000); // 3s timeout
@@ -127,21 +190,16 @@ async function sendPing() {
 
 // Online/offline events
 window.addEventListener("online", () => {
+  if (!monitoringStarted) return;
   appendToLog("✔ Browser reports ONLINE", "success");
   logEvent({ eventType: "online-event", timestamp: new Date().toISOString(), name, unit, sessionId });
 });
 
 window.addEventListener("offline", () => {
+  if (!monitoringStarted) return;
   appendToLog("✖ Browser reports OFFLINE", "failure");
   logEvent({ eventType: "offline-event", timestamp: new Date().toISOString(), name, unit, sessionId });
 });
-
-// Start session
-appendToLog("Starting monitoring…", "info");
-logEvent({ eventType: "session-start", timestamp: new Date().toISOString(), name, unit, sessionId });
-
-// Ping every 3 seconds
-setInterval(sendPing, 3000);
 </script>
 
 </body>
