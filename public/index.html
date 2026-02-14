@@ -8,6 +8,15 @@
     body { font-family: system-ui; margin: 2rem; max-width: 600px; }
     input, button { padding: 0.6rem; width: 100%; margin-bottom: 1rem; }
     button { cursor: pointer; }
+    #logBox {
+      border: 1px solid #ccc;
+      padding: 1rem;
+      height: 250px;
+      overflow-y: auto;
+      background: #fafafa;
+      font-family: monospace;
+      white-space: pre-wrap;
+    }
   </style>
 </head>
 <body>
@@ -23,11 +32,21 @@
 
 <button onclick="startMonitoring()">Start Monitoring</button>
 
+<h2>Live Log Output</h2>
+<div id="logBox">(waiting to start…)</div>
+
 <script>
 let sessionId = null;
 let userName = null;
 let userUnit = null;
 let pingInterval = null;
+
+function logMessage(msg) {
+  const box = document.getElementById("logBox");
+  const timestamp = new Date().toLocaleTimeString();
+  box.textContent += `[${timestamp}] ${msg}\n`;
+  box.scrollTop = box.scrollHeight;
+}
 
 function startMonitoring() {
   userName = document.getElementById("nameInput").value.trim();
@@ -40,27 +59,24 @@ function startMonitoring() {
 
   sessionId = Date.now() + "-" + Math.random().toString(36).slice(2);
 
-  sendEvent({
-    eventType: "session-start",
-    name: userName,
-    unit: userUnit
-  });
+  logMessage(`Monitoring started for ${userName} (${userUnit})`);
+  sendEvent({ eventType: "session-start" });
 
   startPingLoop();
 
-  window.addEventListener("offline", () =>
-    sendEvent({ eventType: "offline-event" })
-  );
+  window.addEventListener("offline", () => {
+    logMessage("Browser went OFFLINE");
+    sendEvent({ eventType: "offline-event" });
+  });
 
-  window.addEventListener("online", () =>
-    sendEvent({ eventType: "online-event" })
-  );
+  window.addEventListener("online", () => {
+    logMessage("Browser went ONLINE");
+    sendEvent({ eventType: "online-event" });
+  });
 
   window.addEventListener("beforeunload", () =>
     sendEvent({ eventType: "session-end", reason: "page-unload" })
   );
-
-  alert("Monitoring started. Keep this page open.");
 }
 
 function sendEvent(event) {
@@ -85,16 +101,19 @@ function startPingLoop() {
 
     try {
       const res = await fetch("/ping");
-      const latency = performance.now() - start;
+      const latency = Math.round(performance.now() - start);
+
+      logMessage(`Ping: ${latency} ms`);
 
       sendEvent({
         eventType: "ping",
         ok: res.ok,
         status: res.status,
-        latencyMs: Math.round(latency)
+        latencyMs: latency
       });
 
     } catch (err) {
+      logMessage(`Ping failed: ${err}`);
       sendEvent({
         eventType: "ping",
         ok: false,
