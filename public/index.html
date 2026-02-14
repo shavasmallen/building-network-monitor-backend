@@ -16,9 +16,9 @@
       margin-top: 1rem;
     }
     .log-line { font-family: monospace; margin: 2px 0; }
-    .log-success { color: #15803d; }   /* green */
-    .log-failure { color: #b91c1c; }   /* red */
-    .log-info { color: #1e3a8a; }      /* blue */
+    .log-success { color: #15803d; }
+    .log-failure { color: #b91c1c; }
+    .log-info { color: #1e3a8a; }
 
     .form-card {
       border: 1px solid #ccc;
@@ -43,6 +43,7 @@
       color: white;
       border: none;
       border-radius: 4px;
+      margin-right: 0.5rem;
     }
   </style>
 </head>
@@ -61,6 +62,7 @@
   <input id="unitInput" placeholder="e.g., 4345 #2">
 
   <button onclick="startMonitoring()">Start Monitoring</button>
+  <button onclick="downloadCSV()">Download My Data (CSV)</button>
 </div>
 
 <div>
@@ -73,6 +75,21 @@ let name = null;
 let unit = null;
 let sessionId = null;
 let monitoringStarted = false;
+let localEvents = [];   // ⭐ store events for CSV export
+
+// Local timestamp with milliseconds
+function timestamp() {
+  const d = new Date();
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  const HH = String(d.getHours()).padStart(2, "0");
+  const MM = String(d.getMinutes()).padStart(2, "0");
+  const SS = String(d.getSeconds()).padStart(2, "0");
+  const ms = String(d.getMilliseconds()).padStart(3, "0");
+
+  return `${yyyy}-${mm}-${dd} ${HH}:${MM}:${SS}.${ms}`;
+}
 
 // Append messages to the live log with color coding
 function appendToLog(message, type = "info") {
@@ -84,13 +101,15 @@ function appendToLog(message, type = "info") {
   if (type === "failure") div.classList.add("log-failure");
   if (type === "info") div.classList.add("log-info");
 
-  div.textContent = message;
+  div.textContent = `[${timestamp()}] ${message}`;
   log.appendChild(div);
   log.scrollTop = log.scrollHeight;
 }
 
-// Send event to backend
+// Send event to backend + store locally
 async function logEvent(event) {
+  localEvents.push(event);
+
   try {
     await fetch("/log", {
       method: "POST",
@@ -125,7 +144,6 @@ function startMonitoring() {
     sessionId
   });
 
-  // Begin ping loop
   sendPing();
   setInterval(sendPing, 3000);
 }
@@ -136,7 +154,7 @@ async function sendPing() {
 
   const start = performance.now();
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 3000); // 3s timeout
+  const timeout = setTimeout(() => controller.abort(), 3000);
 
   try {
     const res = await fetch("/ping", { signal: controller.signal });
@@ -200,6 +218,40 @@ window.addEventListener("offline", () => {
   appendToLog("✖ Browser reports OFFLINE", "failure");
   logEvent({ eventType: "offline-event", timestamp: new Date().toISOString(), name, unit, sessionId });
 });
+
+// ⭐ CSV Export
+function downloadCSV() {
+  if (localEvents.length === 0) {
+    appendToLog("✖ No data to export yet.", "failure");
+    return;
+  }
+
+  const headers = [
+    "timestamp",
+    "eventType",
+    "ok",
+    "status",
+    "latencyMs",
+    "name",
+    "unit",
+    "sessionId"
+  ];
+
+  const rows = localEvents.map(ev =>
+    headers.map(h => JSON.stringify(ev[h] ?? "")).join(",")
+  );
+
+  const csv = [headers.join(","), ...rows].join("\n");
+  const blob = new Blob([csv], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `network-monitor-${sessionId}.csv`;
+  a.click();
+
+  URL.revokeObjectURL(url);
+}
 </script>
 
 </body>
