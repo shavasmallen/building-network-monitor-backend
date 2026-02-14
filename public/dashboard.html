@@ -28,6 +28,8 @@
       <tr>
         <th onclick="sortSummary('unit')">Unit ▲▼</th>
         <th onclick="sortSummary('name')">Name ▲▼</th>
+        <th onclick="sortSummary('first')">First Seen ▲▼</th>
+        <th onclick="sortSummary('last')">Last Seen ▲▼</th>
         <th onclick="sortSummary('avg')">Avg Latency ▲▼</th>
         <th onclick="sortSummary('max')">Max Latency ▲▼</th>
         <th onclick="sortSummary('success')">Ping Successes ▲▼</th>
@@ -77,8 +79,21 @@ function drawSummaryTable(entries) {
         latencies: [],
         success: 0,
         fail: 0,
-        offline: 0
+        offline: 0,
+        first: null,
+        last: null
       };
+    }
+
+    // Track first + last timestamps
+    const ts = e.timestamp;
+    if (ts) {
+      if (!byUnit[e.unit].first || ts < byUnit[e.unit].first) {
+        byUnit[e.unit].first = ts;
+      }
+      if (!byUnit[e.unit].last || ts > byUnit[e.unit].last) {
+        byUnit[e.unit].last = ts;
+      }
     }
 
     if (e.eventType === "ping") {
@@ -115,6 +130,8 @@ function drawSummaryTable(entries) {
     return {
       unit: u.unit,
       name: u.name,
+      first: u.first,
+      last: u.last,
       avg,
       max,
       success: u.success,
@@ -128,8 +145,8 @@ function drawSummaryTable(entries) {
       const col = summarySort.column;
       const dir = summarySort.direction;
 
-      const valA = a[col] ?? -Infinity;
-      const valB = b[col] ?? -Infinity;
+      const valA = a[col] ?? "";
+      const valB = b[col] ?? "";
 
       if (typeof valA === "string") {
         return valA.localeCompare(valB) * dir;
@@ -143,6 +160,8 @@ function drawSummaryTable(entries) {
     row.innerHTML = `
       <td>${r.unit}</td>
       <td>${r.name}</td>
+      <td>${r.first ?? "—"}</td>
+      <td>${r.last ?? "—"}</td>
       <td>${r.avg ?? "—"}</td>
       <td>${r.max ?? "—"}</td>
       <td>${r.success}</td>
