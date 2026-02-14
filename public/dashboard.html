@@ -5,13 +5,17 @@
   <title>Building Network Dashboard</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
   <style>
     body { font-family: system-ui; margin: 2rem; max-width: 1100px; }
     .card { padding: 1rem; border: 1px solid #ddd; border-radius: 8px; margin-bottom: 2rem; }
     label { display: block; margin-bottom: 0.5rem; }
     input { padding: 0.4rem; width: 100%; margin-bottom: 1rem; }
     canvas { max-width: 100%; }
-    button { margin-right: 0.5rem; padding: 0.5rem 1rem; }
+    button { margin-right: 0.5rem; padding: 0.5rem 1rem; cursor: pointer; }
+    th { cursor: pointer; background: #f8f8f8; }
+    table { width: 100%; border-collapse: collapse; }
+    td, th { padding: 6px; border: 1px solid #ccc; }
   </style>
 </head>
 <body>
@@ -33,12 +37,12 @@
 </div>
 
 <div class="card">
-  <h2>Latency Over Time</h2>
+  <h2>Latency Over Time (Multi‑Unit)</h2>
   <canvas id="latencyChart"></canvas>
 </div>
 
 <div class="card">
-  <h2>Ping Events (Latency Timeline)</h2>
+  <h2>Ping Events (Multi‑Unit)</h2>
   <canvas id="pingEventsChart"></canvas>
 </div>
 
@@ -47,10 +51,38 @@
   <canvas id="comparisonChart"></canvas>
 </div>
 
+<div class="card">
+  <h2>Per‑Unit Summary</h2>
+  <table id="summaryTable">
+    <thead>
+      <tr>
+        <th onclick="sortSummary('unit')">Unit ▲▼</th>
+        <th onclick="sortSummary('name')">Name ▲▼</th>
+        <th onclick="sortSummary('avg')">Avg Latency ▲▼</th>
+        <th onclick="sortSummary('max')">Max Latency ▲▼</th>
+        <th onclick="sortSummary('count')">Ping Count ▲▼</th>
+        <th onclick="sortSummary('offline')">Offline Events ▲▼</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+</div>
+
 <script>
-const BASE = ""; // same origin as backend since dashboard is served by Render
+const BASE = ""; // same origin as backend
 
 let timelineChart, latencyChart, comparisonChart, pingEventsChart;
+let summarySort = { column: null, direction: 1 };
+
+// Generate distinct colors automatically
+function colorForUnit(unit) {
+  let hash = 0;
+  for (let i = 0; i < unit.length; i++) {
+    hash = unit.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const hue = Math.abs(hash) % 360;
+  return `hsl(${hue}, 70%, 45%)`;
+}
 
 async function loadData() {
   const filter = document.getElementById('filterInput').value.toLowerCase();
@@ -75,9 +107,10 @@ async function loadData() {
   }
 
   drawTimeline(filtered);
-  drawLatency(filtered);
-  drawPingEvents(filtered);
-  drawComparison(logs); // always show all units
+  drawLatencyMulti(filtered);
+  drawPingEventsMulti(filtered);
+  drawComparison(logs);
+  drawSummaryTable(filtered);
 }
 
 function destroyChart(chart) {
@@ -108,53 +141,68 @@ function drawTimeline(entries) {
   });
 }
 
-function drawLatency(entries) {
+// --- MULTI-LINE LATENCY CHART ---
+function drawLatencyMulti(entries) {
   const pings = entries.filter(e => e.eventType === 'ping');
 
-  const labels = pings.map(e => e.timestamp);
-  const values = pings.map(e => e.latencyMs);
+  const byUnit = {};
+  pings.forEach(p => {
+    if (!byUnit[p.unit]) byUnit[p.unit] = [];
+    byUnit[p.unit].push(p);
+  });
+
+  const datasets = Object.keys(byUnit).map(unit => ({
+    label: unit,
+    data: byUnit[unit].map(e => ({ x: e.timestamp, y: e.latencyMs })),
+    borderColor: colorForUnit(unit),
+    tension: 0.2,
+    pointRadius: 1
+  }));
 
   destroyChart(latencyChart);
 
   latencyChart = new Chart(document.getElementById('latencyChart'), {
     type: 'line',
-    data: {
-      labels,
-      datasets: [{
-        label: 'Latency (ms)',
-        data: values,
-        borderColor: '#b00020',
-        tension: 0.2
-      }]
+    data: { datasets },
+    options: {
+      parsing: false,
+      scales: {
+        x: { type: 'time', time: { unit: 'minute' } },
+        y: { title: { display: true, text: 'Latency (ms)' } }
+      }
     }
   });
 }
 
-function drawPingEvents(entries) {
+// --- MULTI-LINE PING EVENTS CHART ---
+function drawPingEventsMulti(entries) {
   const pings = entries.filter(e => e.eventType === 'ping');
 
-  const labels = pings.map(e => e.timestamp);
-  const values = pings.map(e => e.latencyMs);
+  const byUnit = {};
+  pings.forEach(p => {
+    if (!byUnit[p.unit]) byUnit[p.unit] = [];
+    byUnit[p.unit].push(p);
+  });
+
+  const datasets = Object.keys(byUnit).map(unit => ({
+    label: unit,
+    data: byUnit[unit].map(e => ({ x: e.timestamp, y: e.latencyMs })),
+    borderColor: colorForUnit(unit),
+    backgroundColor: colorForUnit(unit) + "33",
+    tension: 0.2,
+    pointRadius: 2
+  }));
 
   destroyChart(pingEventsChart);
 
   pingEventsChart = new Chart(document.getElementById('pingEventsChart'), {
     type: 'line',
-    data: {
-      labels,
-      datasets: [{
-        label: 'Ping Latency (ms)',
-        data: values,
-        borderColor: '#4f46e5',
-        backgroundColor: 'rgba(79, 70, 229, 0.2)',
-        tension: 0.2,
-        pointRadius: 2
-      }]
-    },
+    data: { datasets },
     options: {
+      parsing: false,
       scales: {
-        y: { title: { display: true, text: 'Latency (ms)' } },
-        x: { title: { display: true, text: 'Timestamp' } }
+        x: { type: 'time', time: { unit: 'minute' } },
+        y: { title: { display: true, text: 'Latency (ms)' } }
       }
     }
   });
@@ -181,9 +229,100 @@ function drawComparison(allLogs) {
       datasets: [{
         label: 'Offline Events per Unit',
         data: values,
-        backgroundColor: '#10b981'
+        backgroundColor: labels.map(u => colorForUnit(u))
       }]
     }
+  });
+}
+
+// --- SORTABLE SUMMARY TABLE ---
+function sortSummary(column) {
+  if (summarySort.column === column) {
+    summarySort.direction *= -1;
+  } else {
+    summarySort.column = column;
+    summarySort.direction = 1;
+  }
+  loadData();
+}
+
+function drawSummaryTable(entries) {
+  const tableBody = document.querySelector("#summaryTable tbody");
+  tableBody.innerHTML = "";
+
+  const byUnit = {};
+
+  entries.forEach(e => {
+    if (!e.unit) return;
+    if (!byUnit[e.unit]) {
+      byUnit[e.unit] = {
+        unit: e.unit,
+        name: e.name || "",
+        latencies: [],
+        offlineCount: 0
+      };
+    }
+
+    if (e.eventType === "ping" && typeof e.latencyMs === "number") {
+      byUnit[e.unit].latencies.push(e.latencyMs);
+    }
+
+    if (e.eventType === "offline-event") {
+      byUnit[e.unit].offlineCount++;
+    }
+
+    if (e.name) {
+      byUnit[e.unit].name = e.name;
+    }
+  });
+
+  let rows = Object.values(byUnit).map(u => {
+    const avg =
+      u.latencies.length > 0
+        ? Math.round(u.latencies.reduce((a, b) => a + b, 0) / u.latencies.length)
+        : null;
+
+    const max =
+      u.latencies.length > 0
+        ? Math.max(...u.latencies)
+        : null;
+
+    return {
+      unit: u.unit,
+      name: u.name,
+      avg,
+      max,
+      count: u.latencies.length,
+      offline: u.offlineCount
+    };
+  });
+
+  if (summarySort.column) {
+    rows.sort((a, b) => {
+      const col = summarySort.column;
+      const dir = summarySort.direction;
+
+      const valA = a[col] ?? -Infinity;
+      const valB = b[col] ?? -Infinity;
+
+      if (typeof valA === "string") {
+        return valA.localeCompare(valB) * dir;
+      }
+      return (valA - valB) * dir;
+    });
+  }
+
+  rows.forEach(r => {
+    const row = document.createElement("tr");
+    row.innerHTML = `
+      <td>${r.unit}</td>
+      <td>${r.name}</td>
+      <td>${r.avg ?? "—"}</td>
+      <td>${r.max ?? "—"}</td>
+      <td>${r.count}</td>
+      <td>${r.offline}</td>
+    `;
+    tableBody.appendChild(row);
   });
 }
 
@@ -242,7 +381,6 @@ function exportCSV() {
     });
 }
 
-// Load everything on page load
 loadData();
 </script>
 
