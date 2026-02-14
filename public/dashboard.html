@@ -30,7 +30,8 @@
         <th onclick="sortSummary('name')">Name ▲▼</th>
         <th onclick="sortSummary('avg')">Avg Latency ▲▼</th>
         <th onclick="sortSummary('max')">Max Latency ▲▼</th>
-        <th onclick="sortSummary('count')">Ping Count ▲▼</th>
+        <th onclick="sortSummary('success')">Ping Successes ▲▼</th>
+        <th onclick="sortSummary('fail')">Ping Failures ▲▼</th>
         <th onclick="sortSummary('offline')">Offline Events ▲▼</th>
       </tr>
     </thead>
@@ -68,21 +69,31 @@ function drawSummaryTable(entries) {
 
   entries.forEach(e => {
     if (!e.unit) return;
+
     if (!byUnit[e.unit]) {
       byUnit[e.unit] = {
         unit: e.unit,
         name: e.name || "",
         latencies: [],
-        offlineCount: 0
+        success: 0,
+        fail: 0,
+        offline: 0
       };
     }
 
-    if (e.eventType === "ping" && typeof e.latencyMs === "number") {
-      byUnit[e.unit].latencies.push(e.latencyMs);
+    if (e.eventType === "ping") {
+      byUnit[e.unit].success++;
+      if (typeof e.latencyMs === "number") {
+        byUnit[e.unit].latencies.push(e.latencyMs);
+      }
+    }
+
+    if (e.eventType === "ping-failure") {
+      byUnit[e.unit].fail++;
     }
 
     if (e.eventType === "offline-event") {
-      byUnit[e.unit].offlineCount++;
+      byUnit[e.unit].offline++;
     }
 
     if (e.name) {
@@ -106,8 +117,9 @@ function drawSummaryTable(entries) {
       name: u.name,
       avg,
       max,
-      count: u.latencies.length,
-      offline: u.offlineCount
+      success: u.success,
+      fail: u.fail,
+      offline: u.offline
     };
   });
 
@@ -133,7 +145,8 @@ function drawSummaryTable(entries) {
       <td>${r.name}</td>
       <td>${r.avg ?? "—"}</td>
       <td>${r.max ?? "—"}</td>
-      <td>${r.count}</td>
+      <td>${r.success}</td>
+      <td>${r.fail}</td>
       <td>${r.offline}</td>
     `;
     tableBody.appendChild(row);
