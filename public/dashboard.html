@@ -71,12 +71,29 @@
   </table>
 </div>
 
-<!-- ⭐ ALL DASHBOARD JS MOVED TO BOTTOM -->
+<!-- ⭐ ALL DASHBOARD JS AT THE BOTTOM -->
 <script>
 const BASE = "";
 
 let timelineChart, latencyChart, comparisonChart, pingEventsChart;
 let summarySort = { column: null, direction: 1 };
+
+// ⭐ NEW: Wait until the date adapter is fully registered
+async function waitForDateAdapter() {
+  return new Promise(resolve => {
+    const check = () => {
+      try {
+        const parsed = Chart._adapters._date.parse("2026-02-14T02:43:42.849Z");
+        if (typeof parsed === "number") {
+          resolve();
+          return;
+        }
+      } catch (e) {}
+      setTimeout(check, 50);
+    };
+    check();
+  });
+}
 
 // Auto-color generator
 function colorForUnit(unit) {
@@ -381,8 +398,9 @@ function exportCSV() {
     });
 }
 
-// ⭐ Ensure adapter loads before charts initialize
-window.addEventListener("load", () => {
+// ⭐ Ensure adapter is ready BEFORE charts initialize
+window.addEventListener("load", async () => {
+  await waitForDateAdapter();
   loadData();
 });
 </script>
