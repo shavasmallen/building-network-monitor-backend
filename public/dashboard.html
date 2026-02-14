@@ -7,7 +7,7 @@
 
   <!-- Correct load order -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0"></script>
+  <script src="/chartjs-adapter-date-fns.bundle.min.js"></script>
 
   <style>
     body { font-family: system-ui; margin: 2rem; max-width: 1100px; }
@@ -28,7 +28,7 @@
 
 <div class="card">
   <h2>Filter by Name or Unit</h2>
-  <label>Enter name or unit (e.g., “3B” or “Shava”)</label>
+  <label for="filterInput">Enter name or unit (e.g., “3B” or “Shava”)</label>
   <input id="filterInput" placeholder="Type to filter…">
   <button onclick="loadData()">Apply Filter</button>
   <button onclick="exportCSV()">Download CSV</button>
@@ -83,7 +83,7 @@ async function waitForDateAdapter() {
   return new Promise(resolve => {
     const check = () => {
       try {
-        const parsed = Chart._adapters._date.parse("2026-02-14T02:43:42.849Z");
+        const parsed = Chart._adapters._date.parse("2026-02-14T03:16:54.723Z");
         if (typeof parsed === "number") {
           resolve();
           return;
@@ -399,7 +399,7 @@ function exportCSV() {
 }
 
 // ⭐ Ensure adapter is ready BEFORE charts initialize
-window.addEventListener("load", async () => {
+document.addEventListener("DOMContentLoaded", async () => {
   await waitForDateAdapter();
   loadData();
 });
