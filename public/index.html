@@ -4,127 +4,144 @@
   <meta charset="UTF-8">
   <title>Network Monitor</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
+
   <style>
-    body { font-family: system-ui; margin: 2rem; max-width: 600px; }
-    input, button { padding: 0.6rem; width: 100%; margin-bottom: 1rem; }
-    button { cursor: pointer; }
-    #logBox {
-      border: 1px solid #ccc;
-      padding: 1rem;
-      height: 250px;
+    body { font-family: system-ui; margin: 2rem; }
+    #liveLog {
+      height: 200px;
       overflow-y: auto;
+      border: 1px solid #ccc;
+      padding: 0.5rem;
       background: #fafafa;
-      font-family: monospace;
-      white-space: pre-wrap;
+      margin-top: 1rem;
     }
+    .log-line { font-family: monospace; margin: 2px 0; }
+    .log-success { color: #15803d; }   /* green */
+    .log-failure { color: #b91c1c; }   /* red */
+    .log-info { color: #1e3a8a; }      /* blue */
   </style>
 </head>
 <body>
 
 <h1>Network Monitor</h1>
-<p>Enter your name and unit to begin monitoring.</p>
+<p>Live connectivity and latency logging.</p>
 
-<label>Name</label>
-<input id="nameInput" placeholder="Your name">
-
-<label>Unit</label>
-<input id="unitInput" placeholder="Your unit (e.g., 3B, 4345 #2)">
-
-<button onclick="startMonitoring()">Start Monitoring</button>
-
-<h2>Live Log Output</h2>
-<div id="logBox">(waiting to start…)</div>
+<div>
+  <strong>Status Log:</strong>
+  <div id="liveLog"></div>
+</div>
 
 <script>
-let sessionId = null;
-let userName = null;
-let userUnit = null;
-let pingInterval = null;
+// Identify this device
+const name = localStorage.getItem("monitorName") || prompt("Enter your name:");
+localStorage.setItem("monitorName", name);
 
-function logMessage(msg) {
-  const box = document.getElementById("logBox");
-  const timestamp = new Date().toLocaleTimeString();
-  box.textContent += `[${timestamp}] ${msg}\n`;
-  box.scrollTop = box.scrollHeight;
+const unit = localStorage.getItem("monitorUnit") || prompt("Enter your unit (e.g., 3B):");
+localStorage.setItem("monitorUnit", unit);
+
+const sessionId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+// Append messages to the live log with color coding
+function appendToLog(message, type = "info") {
+  const log = document.getElementById("liveLog");
+  const div = document.createElement("div");
+  div.classList.add("log-line");
+
+  if (type === "success") div.classList.add("log-success");
+  if (type === "failure") div.classList.add("log-failure");
+  if (type === "info") div.classList.add("log-info");
+
+  div.textContent = message;
+  log.appendChild(div);
+  log.scrollTop = log.scrollHeight;
 }
 
-function startMonitoring() {
-  userName = document.getElementById("nameInput").value.trim();
-  userUnit = document.getElementById("unitInput").value.trim();
-
-  if (!userName || !userUnit) {
-    alert("Please enter both name and unit.");
-    return;
+// Send event to backend
+async function logEvent(event) {
+  try {
+    await fetch("/log", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(event)
+    });
+  } catch (err) {
+    appendToLog("✖ Failed to send log to server", "failure");
   }
-
-  sessionId = Date.now() + "-" + Math.random().toString(36).slice(2);
-
-  logMessage(`Monitoring started for ${userName} (${userUnit})`);
-  sendEvent({ eventType: "session-start" });
-
-  startPingLoop();
-
-  window.addEventListener("offline", () => {
-    logMessage("Browser went OFFLINE");
-    sendEvent({ eventType: "offline-event" });
-  });
-
-  window.addEventListener("online", () => {
-    logMessage("Browser went ONLINE");
-    sendEvent({ eventType: "online-event" });
-  });
-
-  window.addEventListener("beforeunload", () =>
-    sendEvent({ eventType: "session-end", reason: "page-unload" })
-  );
 }
 
-function sendEvent(event) {
-  // Attach metadata to EVERY event
-  event.sessionId = sessionId;
-  event.name = userName;
-  event.unit = userUnit;
-  event.timestamp = new Date().toISOString();
-  event.navigatorOnline = navigator.onLine;
-  event.userAgent = navigator.userAgent;
+// Ping logic with immediate failure logging
+async function sendPing() {
+  const start = performance.now();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 3000); // 3s timeout
 
-  fetch("/log", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(event)
-  }).catch(err => console.error("Failed to send event:", err));
-}
+  try {
+    const res = await fetch("/ping", { signal: controller.signal });
+    clearTimeout(timeout);
 
-function startPingLoop() {
-  async function ping() {
-    const start = performance.now();
-
-    try {
-      const res = await fetch("/ping");
-      const latency = Math.round(performance.now() - start);
-
-      logMessage(`Ping: ${latency} ms`);
-
-      sendEvent({
-        eventType: "ping",
-        ok: res.ok,
-        status: res.status,
-        latencyMs: latency
-      });
-
-    } catch (err) {
-      logMessage(`Ping failed: ${err}`);
-      sendEvent({
-        eventType: "ping",
+    if (!res.ok) {
+      appendToLog(`✖ Ping failed (${res.status})`, "failure");
+      logEvent({
+        eventType: "ping-failure",
         ok: false,
-        error: err.toString()
+        status: res.status,
+        latencyMs: null,
+        timestamp: new Date().toISOString(),
+        name,
+        unit,
+        sessionId
       });
+      return;
     }
-  }
 
-  ping();
-  pingInterval = setInterval(ping, 10000); // every 10 seconds
+    const latency = Math.round(performance.now() - start);
+    appendToLog(`✔ Ping ${latency} ms`, "success");
+
+    logEvent({
+      eventType: "ping",
+      ok: true,
+      status: res.status,
+      latencyMs: latency,
+      timestamp: new Date().toISOString(),
+      name,
+      unit,
+      sessionId
+    });
+
+  } catch (err) {
+    clearTimeout(timeout);
+    appendToLog("✖ Ping failed (network error)", "failure");
+
+    logEvent({
+      eventType: "ping-failure",
+      ok: false,
+      status: "network-error",
+      latencyMs: null,
+      timestamp: new Date().toISOString(),
+      name,
+      unit,
+      sessionId
+    });
+  }
 }
+
+// Online/offline events
+window.addEventListener("online", () => {
+  appendToLog("✔ Browser reports ONLINE", "success");
+  logEvent({ eventType: "online-event", timestamp: new Date().toISOString(), name, unit, sessionId });
+});
+
+window.addEventListener("offline", () => {
+  appendToLog("✖ Browser reports OFFLINE", "failure");
+  logEvent({ eventType: "offline-event", timestamp: new Date().toISOString(), name, unit, sessionId });
+});
+
+// Start session
+appendToLog("Starting monitoring…", "info");
+logEvent({ eventType: "session-start", timestamp: new Date().toISOString(), name, unit, sessionId });
+
+// Ping every 3 seconds
+setInterval(sendPing, 3000);
 </script>
 
 </body>
