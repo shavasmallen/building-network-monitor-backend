@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
-    body { font-family: system-ui; margin: 2rem; max-width: 1000px; }
+    body { font-family: system-ui; margin: 2rem; max-width: 1100px; }
     .card { padding: 1rem; border: 1px solid #ddd; border-radius: 8px; margin-bottom: 2rem; }
     label { display: block; margin-bottom: 0.5rem; }
     input { padding: 0.4rem; width: 100%; margin-bottom: 1rem; }
@@ -17,7 +17,7 @@
 <body>
 
 <h1>Building Network Dashboard</h1>
-<p>This dashboard visualizes network drops and latency for all participating units.</p>
+<p>This dashboard visualizes network latency and outages for all participating units.</p>
 
 <div class="card">
   <h2>Filter by Name or Unit</h2>
@@ -58,15 +58,26 @@ async function loadData() {
   const res = await fetch(`${BASE}/logs`);
   const logs = await res.json();
 
-  const filtered = logs.filter(l =>
-    (l.name && l.name.toLowerCase().includes(filter)) ||
-    (l.unit && l.unit.toLowerCase().includes(filter))
-  );
+  // --- SESSION-BASED FILTERING ---
+  let filtered = logs;
+
+  if (filter) {
+    const matchingSessionIds = new Set(
+      logs
+        .filter(l =>
+          (l.name && l.name.toLowerCase().includes(filter)) ||
+          (l.unit && l.unit.toLowerCase().includes(filter))
+        )
+        .map(l => l.sessionId)
+    );
+
+    filtered = logs.filter(l => matchingSessionIds.has(l.sessionId));
+  }
 
   drawTimeline(filtered);
   drawLatency(filtered);
   drawPingEvents(filtered);
-  drawComparison(logs);
+  drawComparison(logs); // always show all units
 }
 
 function destroyChart(chart) {
@@ -182,11 +193,20 @@ function exportCSV() {
   fetch(`${BASE}/logs`)
     .then(res => res.json())
     .then(logs => {
-      const filtered = logs.filter(l =>
-        !filter ||
-        (l.name && l.name.toLowerCase().includes(filter)) ||
-        (l.unit && l.unit.toLowerCase().includes(filter))
-      );
+      let filtered = logs;
+
+      if (filter) {
+        const matchingSessionIds = new Set(
+          logs
+            .filter(l =>
+              (l.name && l.name.toLowerCase().includes(filter)) ||
+              (l.unit && l.unit.toLowerCase().includes(filter))
+            )
+            .map(l => l.sessionId)
+        );
+
+        filtered = logs.filter(l => matchingSessionIds.has(l.sessionId));
+      }
 
       if (filtered.length === 0) {
         alert("No matching records to export.");
