@@ -23,6 +23,7 @@
   <label>Enter name or unit (e.g., “3B” or “Shava”)</label>
   <input id="filterInput" placeholder="Type to filter…">
   <button onclick="loadData()">Apply Filter</button>
+<button onclick="exportCSV()">Download CSV</button>
 </div>
 
 <div class="card">
@@ -136,6 +137,52 @@ function drawComparison(allLogs) {
       }]
     }
   });
+}
+
+function exportCSV() {
+  const filter = document.getElementById('filterInput').value.toLowerCase();
+
+  fetch(`${BASE}/logs`)
+    .then(res => res.json())
+    .then(logs => {
+      const filtered = logs.filter(l =>
+        !filter ||
+        (l.name && l.name.toLowerCase().includes(filter)) ||
+        (l.unit && l.unit.toLowerCase().includes(filter))
+      );
+
+      if (filtered.length === 0) {
+        alert("No matching records to export.");
+        return;
+      }
+
+      const headers = [
+        "timestamp",
+        "eventType",
+        "latencyMs",
+        "name",
+        "unit",
+        "sessionId",
+        "ip",
+        "serverReceivedAt"
+      ];
+
+      const rows = filtered.map(entry =>
+        headers.map(h => JSON.stringify(entry[h] ?? "")).join(",")
+      );
+
+      const csvContent = [headers.join(","), ...rows].join("\n");
+
+      const blob = new Blob([csvContent], { type: "text/csv" });
+      const url = URL.createObjectURL(blob);
+
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filter ? `network-logs-${filter}.csv` : "network-logs.csv";
+      a.click();
+
+      URL.revokeObjectURL(url);
+    });
 }
 
 // Load everything on page load
