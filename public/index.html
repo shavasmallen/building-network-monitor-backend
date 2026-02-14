@@ -1,169 +1,113 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>Building Network Monitor</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta charset="UTF-8">
+  <title>Network Monitor</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
-    body { font-family: system-ui; margin: 2rem; max-width: 700px; }
-    .card { border: 1px solid #ddd; border-radius: 8px; padding: 1.5rem; margin-bottom: 1.5rem; }
-    .status { font-weight: 600; }
-    .status.online { color: #0a7a2f; }
-    .status.offline { color: #b00020; }
-    .log { max-height: 250px; overflow-y: auto; font-family: ui-monospace; font-size: 0.85rem; background: #fafafa; border-radius: 6px; padding: 0.75rem; border: 1px solid #eee; }
-    label { display: block; margin-bottom: 0.5rem; }
-    input { width: 100%; padding: 0.4rem 0.6rem; margin-bottom: 0.75rem; border-radius: 4px; border: 1px solid #ccc; font-size: 1rem; }
-    button { padding: 0.5rem 1rem; border-radius: 4px; border: none; background: #2563eb; color: white; font-size: 0.95rem; cursor: pointer; }
-    button:disabled { background: #9ca3af; cursor: not-allowed; }
-    small { color: #555; }
+    body { font-family: system-ui; margin: 2rem; max-width: 600px; }
+    input, button { padding: 0.6rem; width: 100%; margin-bottom: 1rem; }
+    button { cursor: pointer; }
   </style>
 </head>
 <body>
-  <h1>Building Network Monitor</h1>
-  <p>
-    This page records when your connection drops or recovers.
-    By using it, you consent to sending technical data plus the name/unit you enter
-    to the building representative for sharing with the ISP.
-  </p>
 
-  <div class="card">
-    <h2>Your info</h2>
-    <label>
-      Name (or initials)
-      <input id="nameInput" type="text" placeholder="e.g., Shava" />
-    </label>
-    <label>
-      Unit / Apartment
-      <input id="unitInput" type="text" placeholder="e.g., 3B" />
-    </label>
-    <button id="startBtn">Start monitoring</button>
-    <p><small>Leave this page open while you experience issues.</small></p>
-  </div>
+<h1>Network Monitor</h1>
+<p>Enter your name and unit to begin monitoring.</p>
 
-  <div class="card">
-    <h2>Connection status</h2>
-    <p>Status: <span id="statusText" class="status">Not started</span></p>
-    <p>Last check: <span id="lastCheck">–</span></p>
-    <p>Session ID: <span id="sessionId">–</span></p>
-  </div>
+<label>Name</label>
+<input id="nameInput" placeholder="Your name">
 
-  <div class="card">
-    <h2>Event log (this session)</h2>
-    <div id="log" class="log"></div>
-  </div>
+<label>Unit</label>
+<input id="unitInput" placeholder="Your unit (e.g., 3B, 4345 #2)">
 
-  <script>
-    const BASE = ""; // same origin as backend since this is served by Render
+<button onclick="startMonitoring()">Start Monitoring</button>
 
-    const statusText = document.getElementById('statusText');
-    const lastCheck = document.getElementById('lastCheck');
-    const logEl = document.getElementById('log');
-    const startBtn = document.getElementById('startBtn');
-    const nameInput = document.getElementById('nameInput');
-    const unitInput = document.getElementById('unitInput');
-    const sessionIdEl = document.getElementById('sessionId');
+<script>
+let sessionId = null;
+let userName = null;
+let userUnit = null;
+let pingInterval = null;
 
-    let sessionId = null;
-    let pingInterval = null;
-    const PING_MS = 10000;
+function startMonitoring() {
+  userName = document.getElementById("nameInput").value.trim();
+  userUnit = document.getElementById("unitInput").value.trim();
 
-    function nowIso() {
-      return new Date().toISOString();
+  if (!userName || !userUnit) {
+    alert("Please enter both name and unit.");
+    return;
+  }
+
+  sessionId = Date.now() + "-" + Math.random().toString(36).slice(2);
+
+  sendEvent({
+    eventType: "session-start",
+    name: userName,
+    unit: userUnit
+  });
+
+  startPingLoop();
+
+  window.addEventListener("offline", () =>
+    sendEvent({ eventType: "offline-event" })
+  );
+
+  window.addEventListener("online", () =>
+    sendEvent({ eventType: "online-event" })
+  );
+
+  window.addEventListener("beforeunload", () =>
+    sendEvent({ eventType: "session-end", reason: "page-unload" })
+  );
+
+  alert("Monitoring started. Keep this page open.");
+}
+
+function sendEvent(event) {
+  // Attach metadata to EVERY event
+  event.sessionId = sessionId;
+  event.name = userName;
+  event.unit = userUnit;
+  event.timestamp = new Date().toISOString();
+  event.navigatorOnline = navigator.onLine;
+  event.userAgent = navigator.userAgent;
+
+  fetch("/log", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(event)
+  }).catch(err => console.error("Failed to send event:", err));
+}
+
+function startPingLoop() {
+  async function ping() {
+    const start = performance.now();
+
+    try {
+      const res = await fetch("/ping");
+      const latency = performance.now() - start;
+
+      sendEvent({
+        eventType: "ping",
+        ok: res.ok,
+        status: res.status,
+        latencyMs: Math.round(latency)
+      });
+
+    } catch (err) {
+      sendEvent({
+        eventType: "ping",
+        ok: false,
+        error: err.toString()
+      });
     }
+  }
 
-    function appendLog(message) {
-      const line = `[${nowIso()}] ${message}\n`;
-      logEl.textContent = line + logEl.textContent;
-    }
+  ping();
+  pingInterval = setInterval(ping, 10000); // every 10 seconds
+}
+</script>
 
-    async function sendLog(eventType, extra = {}) {
-      if (!sessionId) return;
-      const payload = {
-        sessionId,
-        eventType,
-        timestamp: nowIso(),
-        navigatorOnline: navigator.onLine,
-        userAgent: navigator.userAgent,
-        ...extra,
-      };
-
-      try {
-        await fetch(BASE + '/log', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-          keepalive: true,
-        });
-      } catch (e) {
-        appendLog(`Failed to send log to server: ${e.message}`);
-      }
-    }
-
-    function updateStatus(isOnline, source) {
-      statusText.textContent = isOnline ? 'Online' : 'Offline';
-      statusText.className = 'status ' + (isOnline ? 'online' : 'offline');
-      lastCheck.textContent = `${nowIso()} (${source})`;
-      appendLog(`Status: ${isOnline ? 'ONLINE' : 'OFFLINE'} (source: ${source})`);
-    }
-
-    async function pingServer() {
-      const pingStart = Date.now();
-      try {
-        const res = await fetch(BASE + '/ping?ts=' + Date.now(), { cache: 'no-store' });
-        const ok = res.ok;
-        const latency = Date.now() - pingStart;
-        updateStatus(ok, 'ping');
-        await sendLog('ping', { ok, latencyMs: latency, status: res.status });
-      } catch (e) {
-        updateStatus(false, 'ping-error');
-        await sendLog('ping-error', { error: e.message });
-      }
-    }
-
-    function handleOnline() {
-      updateStatus(true, 'online-event');
-      sendLog('online-event');
-    }
-
-    function handleOffline() {
-      updateStatus(false, 'offline-event');
-      sendLog('offline-event');
-    }
-
-    startBtn.addEventListener('click', () => {
-      const name = nameInput.value.trim();
-      const unit = unitInput.value.trim();
-
-      if (!name || !unit) {
-        alert('Please enter both name and unit so we can correlate reports.');
-        return;
-      }
-
-      sessionId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      sessionIdEl.textContent = sessionId;
-      startBtn.disabled = true;
-      nameInput.disabled = true;
-      unitInput.disabled = true;
-
-      appendLog(`Monitoring started for ${name} (unit ${unit}).`);
-      sendLog('session-start', { name, unit });
-
-      updateStatus(navigator.onLine, 'initial');
-      sendLog('initial-status');
-
-      window.addEventListener('online', handleOnline);
-      window.addEventListener('offline', handleOffline);
-
-      pingInterval = setInterval(pingServer, PING_MS);
-      pingServer();
-    });
-
-    window.addEventListener('beforeunload', () => {
-      if (sessionId) {
-        sendLog('session-end', { reason: 'page-unload' });
-      }
-    });
-  </script>
 </body>
 </html>
 
